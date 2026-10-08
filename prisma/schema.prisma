@@ -1,0 +1,143 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String         @id @default(uuid(7))
+  name                String
+  email               String         @unique
+  passwordHash        String
+  memberships         GroupMember[]
+  payments            ExpensePayer[]
+  splitsOwed          ExpenseSplit[]
+  activities          Activity[]
+  settlementsPaid     Settlement[]   @relation("SettlementsPaid")
+  settlementsReceived Settlement[]   @relation("SettlementsReceived")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+}
+
+model Group {
+  id          String        @id @default(uuid(7))
+  name        String
+  members     GroupMember[]
+  expenses    Expense[]
+  activities  Activity[]
+  settlements Settlement[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model GroupMember {
+  id       String   @id @default(uuid(7))
+  groupId  String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+enum SplitType {
+  EQUAL
+  EXACT
+  PERCENTAGE
+  SHARES
+}
+
+model Expense {
+  id          String         @id @default(uuid(7))
+  description String
+  amount      Int
+  splitType   SplitType
+  groupId     String
+  payers      ExpensePayer[]
+  splits      ExpenseSplit[]
+  activities  Activity[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  deletedAt   DateTime?
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+}
+
+// Who put money IN (can be one or many people)
+model ExpensePayer {
+  id         String @id @default(uuid(7))
+  expenseId  String
+  userId     String
+  amountPaid Int
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([expenseId, userId])
+  @@index([userId])
+}
+
+// Who USED the money (each person's share)
+model ExpenseSplit {
+  id         String @id @default(uuid(7))
+  expenseId  String
+  userId     String
+  amountOwed Int
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id])
+
+  @@unique([expenseId, userId])
+  @@index([userId])
+}
+
+model Settlement {
+  id         String   @id @default(uuid(7))
+  groupId    String
+  fromUserId String
+  toUserId   String
+  amount     Int
+  createdAt  DateTime @default(now())
+
+  group    Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  fromUser User  @relation("SettlementsPaid", fields: [fromUserId], references: [id])
+  toUser   User  @relation("SettlementsReceived", fields: [toUserId], references: [id])
+
+  @@index([groupId])
+}
+
+enum ActivityType {
+  GROUP_CREATED
+  MEMBER_ADDED
+  EXPENSE_CREATED
+  EXPENSE_DELETED
+  EXPENSE_RESTORED
+  EXPENSE_PURGED
+  SETTLEMENT_CREATED
+}
+
+model Activity {
+  id        String       @id @default(uuid(7))
+  groupId   String
+  actorId   String
+  type      ActivityType
+  expenseId String?
+  details   Json
+  createdAt DateTime     @default(now())
+
+  group   Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  actor   User     @relation(fields: [actorId], references: [id])
+  expense Expense? @relation(fields: [expenseId], references: [id], onDelete: SetNull)
+
+  @@index([groupId, createdAt])
+}
